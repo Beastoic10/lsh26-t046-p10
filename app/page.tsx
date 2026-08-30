@@ -1,27 +1,58 @@
-import { supabase } from '@/lib/supabaseClient';
-import { seedDatabase } from '@/lib/seed';
-import { simulate } from '@/lib/engine';
-import BalanceChart from '@/components/BalanceChart';
-import RechargeAdvisor from '@/components/RechargeAdvisor';
-import HabitComparison from '@/components/HabitComparison';
-import MonthlyBreakdownBarChart from '@/components/MonthlyBreakdownBarChart';
-import RealMeterComparison from '@/components/RealMeterComparison';
-import MainDashboardLayout from '@/components/MainDashboardLayout';
-
-export const revalidate = 0;
+import { createClient } from '@/lib/supabaseClient'; // Adjust path if using @/lib/supabase/server
 
 export default async function Page() {
-  let { data: households } = await supabase.from('households').select('*');
-  let householdId = households?.length > 0 ? households[0].id : await seedDatabase();
+  const supabase = createClient();
 
-  const [{ data: readings }, { data: recharges }] = await Promise.all([
-    supabase.from('daily_readings').select('*').eq('household_id', householdId).order('reading_date', { ascending: true }),
-    supabase.from('recharges').select('*').eq('household_id', householdId).order('recharge_date', { ascending: true }),
-  ]);
+  // Fetch households from Supabase
+  const { data: households, error } = await supabase
+    .from('households')
+    .select('*');
 
-  const timeseries = simulate(readings, recharges, 0);
+  // Handle potential query errors
+  if (error) {
+    return (
+      <main className="p-6 text-red-400 bg-[#050505] min-h-screen">
+        <p>Error loading households: {error.message}</p>
+      </main>
+    );
+  }
+
+  // Fallback to empty array to eliminate TypeScript TS18047 (null) & TS18048 (undefined) errors
+  const safeHouseholds = households ?? [];
+  const householdCount = safeHouseholds.length;
 
   return (
-    <MainDashboardLayout timeseries={timeseries} readings={readings} />
+    <main className="p-6 bg-[#050505] text-white min-h-screen">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <header className="flex items-center justify-between border-b border-white/10 pb-4">
+          <h1 className="text-2xl font-bold text-yellow-400">Meter Advisor</h1>
+          <span className="text-sm bg-white/10 px-3 py-1 rounded-full">
+            Total Households: {householdCount}
+          </span>
+        </header>
+
+        {householdCount === 0 ? (
+          <div className="p-6 border border-white/10 rounded-xl bg-white/5 text-gray-400">
+            No households found.
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {safeHouseholds.map((household) => (
+              <div
+                key={household.id}
+                className="p-5 border border-yellow-500/20 rounded-xl bg-white/5 backdrop-blur-md shadow-lg"
+              >
+                <h3 className="font-semibold text-lg text-yellow-300">
+                  {household.name || `Household #${household.id}`}
+                </h3>
+                {household.address && (
+                  <p className="text-sm text-gray-400 mt-1">{household.address}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </main>
   );
 }

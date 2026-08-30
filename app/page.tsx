@@ -1,56 +1,33 @@
-import { createClient } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
+import { seedDatabase } from '@/lib/seed';
+import { simulate } from '@/lib/engine';
+import BalanceChart from '@/components/BalanceChart';
+import RechargeAdvisor from '@/components/RechargeAdvisor';
+import HabitComparison from '@/components/HabitComparison';
+import MonthlyBreakdownBarChart from '@/components/MonthlyBreakdownBarChart';
+import RealMeterComparison from '@/components/RealMeterComparison';
+import MainDashboardLayout from '@/components/MainDashboardLayout';
+
+export const revalidate = 0;
 
 export default async function Page() {
-  const supabase = createClient();
+  const { data: households } = await supabase.from('households').select('*');
+  
+  // Safe array conversion to prevent TypeScript TS18047 / TS18048 build errors
+  const safeHouseholds = households ?? [];
+  const householdId = safeHouseholds.length > 0 ? safeHouseholds[0].id : await seedDatabase();
 
-  // Fetch data from Supabase
-  const { data: rawHouseholds, error } = await supabase
-    .from('households')
-    .select('*');
+  const [{ data: readings }, { data: recharges }] = await Promise.all([
+    supabase.from('daily_readings').select('*').eq('household_id', householdId).order('reading_date', { ascending: true }),
+    supabase.from('recharges').select('*').eq('household_id', householdId).order('recharge_date', { ascending: true }),
+  ]);
 
-  // Coalesce null/undefined to an empty array to resolve TypeScript errors
-  const households = rawHouseholds ?? [];
+  const safeReadings = readings ?? [];
+  const safeRecharges = recharges ?? [];
 
-  if (error) {
-    return (
-      <main className="p-6 bg-[#050505] text-red-400 min-h-screen flex items-center justify-center">
-        <p>Error loading data: {error.message}</p>
-      </main>
-    );
-  }
+  const timeseries = simulate(safeReadings, safeRecharges, 0);
 
   return (
-    <main className="p-6 bg-[#050505] text-white min-h-screen">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <header className="flex items-center justify-between border-b border-white/10 pb-4">
-          <h1 className="text-2xl font-bold text-yellow-400">meter.advisor</h1>
-          <span className="text-sm bg-white/10 px-3 py-1 rounded-full">
-            Total Households: {households.length}
-          </span>
-        </header>
-
-        {households.length === 0 ? (
-          <div className="p-6 border border-white/10 rounded-xl bg-white/5 text-gray-400 text-center">
-            No households found in the database.
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {households.map((item: { id: string | number; name?: string; address?: string }) => (
-              <div
-                key={item.id}
-                className="p-5 border border-yellow-500/20 rounded-xl bg-white/5 backdrop-blur-md shadow-lg"
-              >
-                <h3 className="font-semibold text-lg text-yellow-300">
-                  {item.name || `Household #${item.id}`}
-                </h3>
-                {item.address && (
-                  <p className="text-sm text-gray-400 mt-1">{item.address}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </main>
+    <MainDashboardLayout timeseries={timeseries} readings={safeReadings} />
   );
 }
